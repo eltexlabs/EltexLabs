@@ -49,10 +49,25 @@ void DelStrings(int * pStrCnt, char *** pStrTable);
 void PrintStrings(int * pStrCnt, char *** pStrTable);
 int SortStrings(int * pStrCnt, char *** pStrTable);
 int CountWords(char * Str);
+void FixNewline(char * FixMe, int Sz);
 
 // char *   - string
 // char **  - string table
 // char *** - pointer to string table
+
+
+void FixNewline(char * FixMe, int Sz)
+{
+	int c;
+	
+	// Replace first '\n' with '\0'
+	for (c = 0; c < Sz && FixMe[c] != '\0'; c++)
+		if (FixMe[c] == '\n')
+		{
+			FixMe[c] = '\0';
+			break;
+		}
+}
 
 void GetStrings(int * pStrCnt, char *** pStrTable)
 {
@@ -62,7 +77,8 @@ void GetStrings(int * pStrCnt, char *** pStrTable)
 	// Get string count
 	puts("[Filling string table]\nType number of strings:");
 	//scanf("%d", pStrCnt);
-	gets(buf);
+	//gets(buf);
+	fgets(buf, sizeof(buf), stdin);
 	sscanf(buf, "%d", pStrCnt);
 	
 	// 1 or 2 strings - nope
@@ -77,7 +93,9 @@ void GetStrings(int * pStrCnt, char *** pStrTable)
 	{
 		printf("Type string #%i: \n", s+1);
 		//scanf("%s", buf);
-		gets(buf);
+		//gets(buf);
+		fgets(buf, sizeof(buf), stdin);
+		FixNewline(buf, sizeof(buf));
 		len = strlen(buf);
 		(*pStrTable)[s] = (char *) calloc(len + 1, 1);
 		strcpy((*pStrTable)[s], buf);

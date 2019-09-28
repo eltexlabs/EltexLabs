@@ -58,12 +58,26 @@ void DelPur(SPurchase *** pPurTab, int * pCount);
 int  CmpPur(const void * ppvPur1, const void * ppvPur2);
 void SortPur(SPurchase ** PurTab, int Count);
 void PrintPur(SPurchase ** PurTab, int Count);
+void FixNewline(char * FixMe, int Sz);
 
 // struct		- struct (start of struct data)
 // struct * 	- struct pointer
 // struct ** 	- struct pointer table
 // struct ***	- pointer to struct pointer table
 
+
+void FixNewline(char * FixMe, int Sz)
+{
+	int c;
+	
+	// Replace first '\n' with '\0'
+	for (c = 0; c < Sz && FixMe[c] != '\0'; c++)
+		if (FixMe[c] == '\n')
+		{
+			FixMe[c] = '\0';
+			break;
+		}
+}
 
 void GetPur(SPurchase *** pPurTab, int * pCount)
 {
@@ -76,7 +90,8 @@ void GetPur(SPurchase *** pPurTab, int * pCount)
 	
 	// Get stuct count
 	puts("[Allocating and filling structures]\nType number of structs:");
-	gets(Buf);
+	//gets(Buf);
+	fgets(Buf, sizeof(Buf), stdin);
 	sscanf(Buf, "%d", pCount);
 	
 	// 1 or 2 structs - nope
@@ -96,11 +111,14 @@ void GetPur(SPurchase *** pPurTab, int * pCount)
 		
 		// Name
 		printf("Type name (%d symbols max):\n", BUF_LEN);
-		gets(Current->Name);
+		//gets(Current->Name);
+		fgets(Current->Name, BUF_LEN, stdin);
+		FixNewline(Current->Name, BUF_LEN);
 		
 		// Date
-		puts("Type date in format \'day month year\'");
-		gets(Buf);
+		puts("Type date in format \'day month year\':");
+		//gets(Buf);
+		fgets(Buf, sizeof(Buf), stdin);
 		sscanf(Buf, "%d %d %d", &Day, &Mon, &Year);
 		if (Day > 31)	Day = 31;
 		if (Mon > 12)	Mon = 12;
@@ -110,13 +128,15 @@ void GetPur(SPurchase *** pPurTab, int * pCount)
 		
 		// Cost
 		puts("Type cost:");
-		gets(Buf);
+		//gets(Buf);
+		fgets(Buf, sizeof(Buf), stdin);
 		sscanf(Buf, "%f", &Cost);
 		Current->Cost = Cost;
 		
 		// Count
 		puts("Type count:");
-		gets(Buf);
+		//gets(Buf);
+		fgets(Buf, sizeof(Buf), stdin);
 		sscanf(Buf, "%d", &Num);
 		Current->Num = Num;
 	}
