@@ -32,21 +32,34 @@ POSSIBILITY OF SUCH DAMAGE.
 //// LAB #5 - library
 ////
 
+// Defines
+//#define USE_MATH_LIB
+
 // Includes
-#include <math.h>
+#ifdef USE_MATH_LIB
+ #include <math.h>
+#endif
 #include <stdio.h>
 #include "lib.h"
 
 double pow3(double x)
 {
 	puts("[library: pow3 func called]");
-	return pow(x, 3.0);
+	#ifdef USE_MATH_LIB
+	 return pow(x, 3.0);
+	#else
+	 return x*x*x;
+	#endif
 }
 
 double pow4(double x)
 {
 	puts("[library: pow4 func called]");
-	return pow(x, 4.0);
+	#ifdef USE_MATH_LIB
+	 return pow(x, 4.0);
+	#else
+	 return x*x*x*x;
+	#endif
 }
 
 // Init and deinit funcs for dlopen
