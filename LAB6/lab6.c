@@ -32,13 +32,6 @@ POSSIBILITY OF SUCH DAMAGE.
 //// LAB #6 - var #5: Winnie Pooh and bees
 ////
 
-/* * 5. Винни-Пух и пчелы. Заданное количество пчел добывают мед равными
- * порциями, задерживаясь в пути на случайное время. Винни-Пух потребляет
- * мед порциями заданной величины за заданное время и столько же времени
- * может прожить без питания. Работа каждой пчелы реализуется в 
- * порожденном процессе.
- * */
-
 /* === From: https://linux.die.net/man/2/wait ===
  * 
  * WNOHANG - return immediately if no child has exited.
@@ -112,7 +105,7 @@ int child_main(int pid);
 
 int child_main(int pid)
 {
-	// Child peocess (Bee) //
+	// Child process (Bee) //
 	int flytime, honey;
 	
 	
