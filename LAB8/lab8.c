@@ -31,7 +31,9 @@ POSSIBILITY OF SUCH DAMAGE.
 //// 11.10.19
 //// LAB #8 - var #7: Team DM
 ////
-
+//// !!! It is better to put messages in one message queue and use type to
+//// !!! identify messages instead of creating message queues for each child
+////
 
 
 // Includes
@@ -189,7 +191,7 @@ int child_main(int pid, int my_msqid, int * msqids, int teams)
 			}
 			
 			// Report status
-			printf("[Team(%d): dmg=%d,\t income=%d,\t members=\t%d]\n",
+			printf("[Team(%d): dmg=%d,\t income=%d,\t members=%d]\n",
 				pid, totaldmg, newmembers, members );
 			
 			// Wait for next cycle
