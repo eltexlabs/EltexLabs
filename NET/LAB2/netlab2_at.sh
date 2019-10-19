@@ -28,9 +28,9 @@ update_job_list()
 playsnd()
 {
 	# clementine sucks
-	 #clementine -l $1 -p
+	 #clementine -l $1 -p &
 	
-	paplay $1
+	paplay $1 &
 }
 
 # Shows at jobs
