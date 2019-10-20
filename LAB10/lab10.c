@@ -29,7 +29,7 @@ POSSIBILITY OF SUCH DAMAGE.
 */
 
 //// 20.10.19
-//// LAB #10 - var #10: calc CRC for files
+//// LAB #10 - var #10: calculate checksums for files
 ////
 
 
@@ -47,15 +47,16 @@ POSSIBILITY OF SUCH DAMAGE.
 
 // Definitions
 #define COND_EXIT(COND, EXMSG) { if (COND) { puts(EXMSG); exit(EXIT_FAILURE); } }
+#define TH_DELAY	1			// Artificial delay for child threads
+//#define DEBUG
 
-#define TH_DELAY 1	// Artificial delay for child threads
 
 struct tharg_struct
 {
 	char * filename;
 	int num;
-	uint32_t * crcs;
-	pthread_mutex_t * pcrc_mutex;
+	uint32_t * csums;
+	pthread_mutex_t * pcsum_mutex;
 };
 typedef struct tharg_struct tharg_t;
 
@@ -67,26 +68,55 @@ void * thread_main(void * pv_tharg)
 {
 	/* Child thread */
 	tharg_t * p_tharg;
-	int crc;
+	uint32_t csum;
+	FILE * f;
+	int c;
 	
 	p_tharg = (tharg_t *) pv_tharg; // Cast void pointer to proper type
 	printf("Child thread: working on file \"%s\" ... \n", p_tharg->filename);
 	
-	// Calculate CRC
-	crc = 0xF00D;
+	// Calculate checksum
+	csum = 0;
+	f = fopen(p_tharg->filename, "r");	// Open file
+	if (f)
+	{
+		// Add together all bytes from file
+		while ( !feof(f) )
+		{
+			c = fgetc(f);
+			if (c != EOF)	// Prevent -1 going into checksum
+			{
+				#ifdef DEBUG
+				printf("0x%X ", c);
+				#endif
+				csum += c;
+			}
+		}
+		#ifdef DEBUG
+		puts(" ");
+		#endif
+		
+		// Close file
+		fclose(f);
+	}
+	else
+	{
+		printf("Child thread: can't open file \"%s\" \n", p_tharg->filename);
+		csum = 0xFFFFFFFF;
+	}
 	
-	// Lock shared CRC table
+	// Lock shared checksum table
 	printf("Child thread: waiting for mutex ... \n");
-	pthread_mutex_lock(p_tharg->pcrc_mutex);
+	pthread_mutex_lock(p_tharg->pcsum_mutex);
 	
-	// Write result to CRC table
-	(p_tharg->crcs)[p_tharg->num] = crc;
+	// Write result to checksum table
+	(p_tharg->csums)[p_tharg->num] = csum;
 	sleep(TH_DELAY);
 	
-	// Unlock shared CRC table
-	pthread_mutex_unlock(p_tharg->pcrc_mutex);
+	// Unlock shared checksum table
+	pthread_mutex_unlock(p_tharg->pcsum_mutex);
 	
-	printf("Child thread: finifshed working on file \"%s\" \n", p_tharg->filename);
+	printf("Child thread: finished working on file \"%s\" \n", p_tharg->filename);
 	
 	pthread_exit(NULL);
 }
@@ -95,10 +125,12 @@ void * thread_main(void * pv_tharg)
 int main (int argc, char * argv[])
 {
 	/* Parent process */
+	int nfiles;
+	char ** fnames;
 	pthread_t *tids;
 	tharg_t *thargs, *tharg;
-	uint32_t *crcs;
-	pthread_mutex_t crc_mutex;
+	uint32_t *csums;
+	pthread_mutex_t csum_mutex;
 	int t, temp;
 	
 	// Check arguments
@@ -107,22 +139,24 @@ int main (int argc, char * argv[])
 		puts("Use: [prog] [file1] [file2] ...");
 		exit(EXIT_SUCCESS);
 	}
-	tids = calloc( sizeof(pthread_t) * argc, 1 );	// Alloc memory for thread IDs
-	thargs = calloc( sizeof(tharg_t) * argc, 1 );	// Alloc memory for thread args
-	crcs = calloc( sizeof(uint32_t) * argc, 1 );	// Alloc memory for CRCs
+	nfiles = argc - 1;
+	fnames = &argv[1];
+	tids = calloc( sizeof(pthread_t) * nfiles, 1 );	// Alloc memory for thread IDs
+	thargs = calloc( sizeof(tharg_t) * nfiles, 1 );	// Alloc memory for thread args
+	csums = calloc( sizeof(uint32_t) * nfiles, 1 );	// Alloc memory for checksums
 	
 	// Prepare mutex
-	pthread_mutex_init(&crc_mutex, NULL);
+	pthread_mutex_init(&csum_mutex, NULL);
 	
 	// Start threads
 	printf("Parent: spawning threads ... \n");
-	for (t = 0, tharg = thargs; t < argc; t++, tharg++)
+	for (t = 0, tharg = thargs; t < nfiles; t++, tharg++)
 	{
 		// Prepare args
-		tharg->filename = argv[t];
+		tharg->filename = fnames[t];
 		tharg->num = t;
-		tharg->crcs = crcs;
-		tharg->pcrc_mutex = &crc_mutex;
+		tharg->csums = csums;
+		tharg->pcsum_mutex = &csum_mutex;
 		
 		// Create thread
 		temp = pthread_create(&tids[t], NULL, thread_main, tharg);
@@ -131,23 +165,23 @@ int main (int argc, char * argv[])
 	
 	// Wait for all threads
 	printf("Parent: waiting for child threads ... \n");
-	for (t = 0; t < argc; t++)
+	for (t = 0; t < nfiles; t++)
 	{
 		pthread_join(tids[t], NULL); 
 	}
 	
 	// Check results
 	printf("Parent: printing results ... \n");
-	for (t = 0; t < argc; t++)
+	for (t = 0; t < nfiles; t++)
 	{
-		printf("File \"%s\" CRC is: 0x%X\n", argv[t], crcs[t]);
+		printf("File \"%s\" checksum is: 0x%X\n", fnames[t], csums[t]);
 	}
 	
 	// Free memory
 	free(tids);
 	free(thargs);
-	free(crcs);
-	pthread_mutex_destroy(&crc_mutex);
+	free(csums);
+	pthread_mutex_destroy(&csum_mutex);
 	
 	// Exit
 	return 0;
