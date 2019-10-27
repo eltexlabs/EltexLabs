@@ -181,7 +181,7 @@ void * thread_main(void * pv_tharg)
 	clmsg_result_t msg;
 	int temp, try;
 	
-	// Get atgs
+	// Get args
 	pa = (thargs_t *) pv_tharg;
 	
 	// Init socket
@@ -238,7 +238,7 @@ void * thread_main(void * pv_tharg)
 	msg.targets = targets;
 	send(cl_sock, &msg, sizeof(msg), 0);
 	
-	// Close sockets
+	// Close socket
 	close(cl_sock);
 	
 	// Exit
@@ -257,6 +257,7 @@ int main (int argc, char * argv[])
 	int sv_sock, cl_socks[NUM_THR], cl_count, c;
 	struct sockaddr_un sau;
 	clmsg_result_t cl_msg;
+	int th_count, x, y;
 	
 	// Get args
 	if (argc != 2)
@@ -288,20 +289,34 @@ int main (int argc, char * argv[])
 	
 	// Start threads
 	printf("Parent: spawning threads ... \n");
+	th_count = 0;
 	for (t = 0, fdir = 0, tharg = thargs; t < NUM_THR; t++, fdir++, tharg++)
 	{
+		// Check direction (filter out of bounds threads)
+		x = field.start_x + xflydirs[fdir];
+		y = field.start_y + yflydirs[fdir];
+		if ( (0 > x || x >= field.size) || (0 > y || y >= field.size) )
+		{
+			#ifdef DEBUG
+			printf("Parent: skipping direction [%s] \n", sflydirs[fdir]);
+			#endif
+			
+			continue;
+		}
+		
 		// Prepare args
 		tharg->fdir = fdir;
 		tharg->pf = &field;
 		
 		// Create thread
-		temp = pthread_create(&tids[t], NULL, thread_main, tharg);
+		temp = pthread_create(&tids[th_count], NULL, thread_main, tharg);
 		COND_EXIT(temp, "pthread_create() error");
+		th_count++;
 	}
 	
 	// Accept client connections
 	cl_count = 0;
-	while (cl_count != NUM_THR)
+	while (cl_count != th_count)
 	{
 		cl_socks[cl_count] = accept(sv_sock, (struct sockaddr *) NULL, 0);	// (server_sock, client_addr, client_addr_sz)
 		COND_MSG(cl_socks[cl_count] == FAIL, "accept() error");
@@ -325,7 +340,7 @@ int main (int argc, char * argv[])
 	
 	// Wait for all threads to exit
 	printf("Parent: waiting for child threads to exit ... \n");
-	for (t = 0; t < NUM_THR; t++)
+	for (t = 0; t < th_count; t++)
 		pthread_join(tids[t], NULL);
 	
 	// Close sockets
