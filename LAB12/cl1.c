@@ -33,6 +33,66 @@
 
 int main (int argc, char * argv[])
 {
+	int tcp_port, udp_port;
+	int cl_sock, udp_sock; // sv_sock,
+	struct sockaddr_in sv_addr, udp_addr;	// cl_addr, 
+	int result;//, optarg;
+	int try;
+	char * address;
+	
+	puts("Client: starting up ...\n");
+	
+	// Get args
+	if (argc != 4)
+	{
+		puts("Ivalid args");
+		puts("Server usage: [prog] [server_addr] [tcp_port] [udp_port]");
+		exit(EXIT_SUCCESS);
+	}
+	address = argv[1];
+	sscanf(argv[2], "%d", &tcp_port);
+	sscanf(argv[3], "%d", &udp_port);
+	
+	// Prepare TCP client socket
+	puts("Client: opening TCP socket ...");
+	PrepInetSock(address, tcp_port, cl_sock, sv_addr, false);
+	
+	// Prepare UDP client socket
+	puts("Client: opening UDP socket ...");
+	PrepInetSock(address, udp_port, udp_sock, udp_addr, true);
+	
+	// Connect to server via TCP
+	/*for (try = 0; try < CL_TRYCOUNT; try++)
+	{
+		sleep(1);	// Period between attempts
+		
+		if (connect(cl_sock, (struct sockaddr *) &sv_addr, sizeof(sv_addr)) == FAIL)
+			printf("Client: connect attempt #%d failed \n", try);
+		else
+			break;
+	}
+	COND_EXIT(cl_sock == FAIL, "connect() error");*/
+	
+	// Main loop
+	while (!UserQuit())
+	{
+		/* Recv a response */
+		fromSize = sizeof(fromAddr);
+		 if ((respStringLen = recvfrom(sock, echoBuffer, ECHOMAX, 0, 
+		(struct sockaddr *) &fromAddr, &fromSize)) != echoStringLen)
+				DieWithError("recvfrom() failed");
+		
+		sleep(1);
+	}
+	
+	// Close sockets
+	close(cl_sock);
+	close(sv_sock);
+	
+	puts("Client: shutting down ...\n");
+	
+	
+	/*
 	fcell_t *pcells;
 	short fly_x, fly_y, x, y;
 	int size, targets;
@@ -104,5 +164,5 @@ int main (int argc, char * argv[])
 	close(cl_sock);
 	
 	// Exit
-	pthread_exit(NULL);
+	pthread_exit(NULL);*/
 }
