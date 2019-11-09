@@ -11,12 +11,14 @@
 #include <sys/types.h>		// System types
 #include <wait.h>			// waitpid
 #include <unistd.h>			// sleep, fork, getpid, close, unlink
-#include <time.h>			// time
+//#include <time.h>			// time
+#include <sys/time.h>
 #include <pthread.h>		// pthread_*** functions
 #include <sys/socket.h>		// Sockets
 #include <netinet/in.h>		// Inet
 #include <arpa/inet.h>		// Inet
 //#include <sys/un.h>		// Unix
+#include <errno.h>
 
 #include "shared.h"
 
@@ -24,7 +26,7 @@
 
 // Funcs //
 
-void PrepInetSock(const char * address, int port, int * sock, void * sockaddr, bool udp)
+void PrepInetSock(const char * address, int port, int * sock, void * sockaddr, bool udp, bool broadcast)
 {
 	int type, optarg, result;
 	struct sockaddr_in *saddr;
@@ -36,7 +38,7 @@ void PrepInetSock(const char * address, int port, int * sock, void * sockaddr, b
 		type = SOCK_DGRAM;
 	else
 		type = SOCK_STREAM;
-	COND_EXIT(port < 0 || port > 0xFFFF, "Invalid port configuration!");
+	COND_EXIT(port < 1023 || port > 0xFFFF, "Invalid port number!");
 	
 	// Make socket
 	*sock = socket(AF_INET, type, 0);
@@ -46,10 +48,16 @@ void PrepInetSock(const char * address, int port, int * sock, void * sockaddr, b
 	if (udp)
 	{
 		optarg = 1;
-		result = setsockopt(*sock, SOL_SOCKET, SO_REUSEADDR, &optarg, sizeof(optarg));	// Multiple local UDP clients
-		COND_EXIT(result == FAIL, "setsockopt() error");
-		result = setsockopt(*sock, SOL_SOCKET, SO_BROADCAST, &optarg, sizeof(optarg));	// Enable UDP broadcast
-		COND_EXIT(result == FAIL, "setsockopt() error");
+		if (broadcast)
+		{
+			result = setsockopt(*sock, SOL_SOCKET, SO_BROADCAST, &optarg, sizeof(optarg));	// Enable UDP broadcast
+			COND_EXIT(result == FAIL, "setsockopt() error");
+		}
+		//else
+		//{
+			result = setsockopt(*sock, SOL_SOCKET, SO_REUSEADDR, &optarg, sizeof(optarg));	// Multiple local UDP clients
+			COND_EXIT(result == FAIL, "setsockopt() error");
+		//}
 	}
 	//result = setsockopt(*sock, SOL_SOCKET, SO_RCVLOWAT, (char *)&msg_len, sizeof(msg_len));
 	
@@ -60,18 +68,62 @@ void PrepInetSock(const char * address, int port, int * sock, void * sockaddr, b
 		COND_EXIT(ipaddress == FAIL, "inet_addr() error");
 	}
 	else
-		ipaddress = htonl(INADDR_ANY);
-	memset(saddr, 0x00, sizeof(*saddr));	// Addr: Clear struct
-    saddr->sin_family = AF_INET;			// Addr: Internet
-    saddr->sin_addr.s_addr = ipaddress;		// Addr: IP address
-    saddr->sin_port = htons(port);			// Addr: Port number
+	{
+		if (udp && broadcast)
+			ipaddress = htonl(INADDR_BROADCAST);
+		else
+			ipaddress = htonl(INADDR_ANY);
+	}
+	memset(saddr, 0x00, sizeof(struct sockaddr));	// Addr: Clear struct
+	saddr->sin_family = AF_INET;					// Addr: Internet
+	saddr->sin_addr.s_addr = ipaddress;				// Addr: IP address
+	saddr->sin_port = htons(port);					// Addr: Port number
     
-    // Bind socket
-	result = bind(*sock, (struct sockaddr *) saddr, sizeof(*saddr));
-	COND_EXIT(result == FAIL, "bind() error");
 	printf("%s socket opened (port %d)\n", udp? "UDP" : "TCP", port);
-	if (address)
-		printf("socket address is %s (0x%X)\n", address, htonl(ipaddress));
+	printf("socket address: %s (0x%X)\n", address? address : "special", htonl(ipaddress));
+}
+
+extern void PrepInetClientSock(const char * address, int port, int * sock, void * sockaddr, bool udp)
+{
+	int result;
+	
+	// Prep socket
+	PrepInetSock(address, port, sock, sockaddr, udp, false);
+	
+	if (udp)
+	{
+		// Bind socket
+		result = bind(*sock, (struct sockaddr *) sockaddr, sizeof(struct sockaddr));
+		if (result == FAIL)
+			printf("errno: %d\n", errno);
+		COND_EXIT(result == FAIL, "bind() error");
+	}
+}
+
+// bind() errno 13 - permission denied (ports 0-1023 system only)
+// bind() errno 98 - already in use
+// listen errno 95 - (Operation not supported) EOPNOTSUPP
+extern void PrepInetServerSock(const char * address, int port, int * sock, void * sockaddr, bool udp, int qsize)
+{
+	int result;
+	
+	// Prep socket
+	PrepInetSock(address, port, sock, sockaddr, udp, true);
+	
+	if (!udp)
+	{
+		// Bind socket
+		result = bind(*sock, (struct sockaddr *) sockaddr, sizeof(struct sockaddr));
+		if (result == FAIL)
+			printf("errno: %d\n", errno);
+		COND_EXIT(result == FAIL, "bind() error");
+	
+		// Start listening
+		result = listen(*sock, qsize);
+		if (result == FAIL)
+			printf("errno: %d\n", errno);
+		COND_EXIT(result == FAIL, "listen() error");
+	}
 }
 
 int UserQuit()

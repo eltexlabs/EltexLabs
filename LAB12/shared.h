@@ -17,9 +17,12 @@
 #define COND_EXIT(COND, EXMSG) { if (COND) { printf("=== Error in %s() ===\n%s\n", __func__, EXMSG); exit(EXIT_FAILURE); } }
 #define COND_MSG(COND, MSG) { if (COND) { printf("=== Warning in %s() ===\n%s\n", __func__, MSG); } }
 //#define COND_TEXIT(COND, EXMSG) { if (COND) { printf("=== Error in %s() ===\n%s\n", __func__, EXMSG); pthread_exit(NULL); } }
-//#define DEBUG
+#define DEBUG
 
 #define CL_TRYCOUNT 10	// Client number of connect attempts
+#define SHD_RD	0
+#define SHD_WR	1
+#define SHD_ALL	2
 
 // Message types
 #pragma pack(1)
@@ -68,5 +71,7 @@ typedef struct msg_echo_t
 
 
 // Func prototypes
-extern void PrepInetSock(const char * address, int port, int * sock, void * sockaddr, bool udp);
+extern void PrepInetClientSock(const char * address, int port, int * sock, void * sockaddr, bool udp);
+extern void PrepInetServerSock(const char * address, int port, int * sock, void * sockaddr, bool udp, int qsize);
+
 extern int UserQuit();

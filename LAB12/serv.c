@@ -13,11 +13,15 @@
 #include <sys/types.h>	// System types
 #include <wait.h>		// waitpid
 #include <unistd.h>		// sleep, fork, getpid, close, unlink
-#include <time.h>		// time
+//#include <time.h>		// time
+#include <sys/time.h>
 #include <pthread.h>	// pthread_*** functions
 #include <sys/socket.h>			// Sockets
 #include <netinet/in.h>			// Inet
 //#include <sys/un.h>			// Unix
+
+#include <errno.h>
+#include <fcntl.h>
 
 #include "shared.h"	// Header srared with clients
 
@@ -40,9 +44,8 @@ int main (int argc, char * argv[])
 	int tcp_port, udp_port;
 	int sv_sock, *cl_socks, udp_sock;
 	struct sockaddr_in sv_addr, cl_addr, udp_addr;
-	int cl, p;	// Counters
-	int result, optarg;
-	BOOL quit;
+	int cl; //, p;	// Counters
+	int result; //, optarg;
 	
 	puts("Server: starting up ...\n");
 	
@@ -72,7 +75,7 @@ int main (int argc, char * argv[])
 	
 	// Prepare UDP server socket
 	puts("Server: opening UDP socket ...");
-	PrepInetSock(NULL, udp_port, udp_sock, udp_addr, true);
+	PrepInetServerSock(NULL, udp_port, &udp_sock, &udp_addr, true, SERV_QSZ);
 	/*udp_sock = socket(AF_INET, SOCK_DGRAM, 0);		// Make UDP socket
 	COND_EXIT(udp_sock == FAIL, "socket() error");
 	optarg = 1;
@@ -91,7 +94,8 @@ int main (int argc, char * argv[])
 	
 	// Prepare TCP server socket
 	puts("Server: opening TCP socket ...");
-	PrepInetSock(NULL, tcp_port, sv_sock, sv_addr, false);
+	PrepInetServerSock(NULL, tcp_port, &sv_sock, &sv_addr, false, SERV_QSZ);
+	fcntl(sv_sock, F_SETFL, O_NONBLOCK);
 	/*sv_sock = socket(AF_INET, SOCK_STREAM, 0);		// Make TCP socket
 	COND_EXIT(sv_sock == FAIL, "socket() error");
 	memset(&sv_addr, 0x00, sizeof(sv_addr));		// Addr: clear struct
@@ -100,13 +104,16 @@ int main (int argc, char * argv[])
     sv_addr.sin_port = htons(tcp_port);				// Addr: Port number for incoming connections
 	result = bind(sv_sock, (struct sockaddr *) &sv_addr, sizeof(sv_addr));	// Bind TCP socket
 	COND_EXIT(result == FAIL, "bind() error");
-	printf("Server: TCP socket opened (port %d)\n", tcp_port);*/
+	printf("Server: TCP socket opened (port %d)\n", tcp_port);
 	result = listen(sv_sock, SERV_QSZ);				// Start listening TCP socket
-	COND_EXIT(result == FAIL, "listen() error");
+	COND_EXIT(result == FAIL, "listen() error");*/
 	
 	// Main loop
+	int counter = 0;
 	while (!UserQuit())
 	{
+		char buf[300];
+		
 		// Check connections
 		// Check message queue
 			// not full: Recieve incoming data (select(), peek())
@@ -114,12 +121,79 @@ int main (int argc, char * argv[])
 			// full: send messages
 				// send UDP for cl2
 		
-		// Send UDP request to client
-		 if (sendto(udp_sock, "udp1", sizeof("udp1"), 0, (struct sockaddr *) &udp_addr,
-		sizeof(udp_addr)) != sizeof("udp1"))
+		// Check incoming connections
+		if (num_clients < max_clients)
 		{
-			puts("sendto() error");
-			exit(1);
+			puts("Checking incoming connections ...");
+			while (1)
+			{
+				socklen_t socklen = sizeof(cl_addr);
+				cl_socks[num_clients] = accept(sv_sock, (struct sockaddr *) &cl_addr, &socklen);
+				if (cl_socks[num_clients] != FAIL)
+				{
+					printf("Client connected (0x%X, %d)\n", htonl(cl_addr.sin_addr.s_addr), htons(cl_addr.sin_port));
+					fcntl(cl_socks[num_clients], F_SETFL, O_NONBLOCK);
+					num_clients++;
+				}
+				else
+				{
+					puts("No connections");
+					break;
+				}
+			};
+		}
+		
+		// Send UDP request to client
+		if (counter < 5)
+			counter++;
+		else
+		{
+			counter = 0;
+			
+			puts("Sending UDP broadcast ...");
+			
+			if (sendto(udp_sock, "udp1", sizeof("udp1"), 0, (struct sockaddr *) &udp_addr,
+			 sizeof(udp_addr)) != sizeof("udp1"))
+			{
+				puts("sendto() error");
+				exit(1);
+			}
+		}
+		
+		// Check response
+		puts("Checking TCP ...");
+		strcpy(buf, "");
+		for (cl = 0; cl < num_clients; cl++)
+		{
+			result = recvfrom(cl_socks[cl], buf, sizeof(buf), 0, (struct sockaddr *) NULL, NULL); //MSG_DONTWAIT
+			if (result != FAIL)
+			{
+				if (result != 0)
+				{
+					puts("Got message from client ...");
+					puts(buf);
+				}
+				else
+					puts("Client disconnected ...");
+			}
+			else
+				puts("Nothing on UDP");
+		}
+		if (strlen(buf))
+		{
+			puts("Sending UDP broadcast 2 ...");
+			
+			if (sendto(udp_sock, "udp2", sizeof("udp2"), 0, (struct sockaddr *) &udp_addr,
+			 sizeof(udp_addr)) != sizeof("udp2"))
+			{
+				puts("sendto() error");
+				exit(1);
+			}
+			
+			puts("Sending TCP message ...");
+			//strcat(buf, "_tcp2");
+			for (cl = 0; cl < num_clients; cl++)
+				send(cl_socks[cl], buf, strlen(buf), 0);
 		}
 		
 		sleep(1);
