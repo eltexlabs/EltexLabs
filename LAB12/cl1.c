@@ -107,9 +107,10 @@ int main (int argc, char * argv[])
 			if (!strcmp(buf, MSG_ECHO1))
 			{
 				puts("Got UDP echo from server ...");
-				sltime = rand() % MAX_SLEEP;
-				printf("Going to sleep for %d seconds\n", sltime);
+				sltime = (rand() % MAX_SLEEP)+1;
+				printf("Going to sleep for %d second(s)\n", sltime);
 				sleep(sltime);
+				puts("Woke up ...");
 				
 				result = rand() % (NUM_STRINGS);
 				printf("Sending response: %s \n", strings[result]);

@@ -46,6 +46,7 @@ int main (int argc, char * argv[])
 	int sltime;
 	char * address;
 	char buf[BUF_SZ];
+	bool quit;
 	
 	puts("Client: starting up ...\n");
 	
@@ -94,7 +95,8 @@ int main (int argc, char * argv[])
 	COND_EXIT(result == FAIL, "connect() error");
 	
 	// Main loop
-	while (!UserQuit())
+	quit = false;
+	while (!UserQuit() && !quit)
 	{
 		// Check out UDP
 		socklen_t sz = sizeof(udp_addr);
@@ -112,7 +114,13 @@ int main (int argc, char * argv[])
 				do
 				{
 					result = recv(cl_sock, buf, sizeof(buf), 0);
-					if (result != FAIL)
+					if (result == 0)
+					{
+						puts("Server out of reach ...");
+						quit = true;
+						break;
+					}
+					else if (result != FAIL)
 					{
 						puts("TCP message from server:");
 						for (c = 0; c < result; c++)
@@ -120,13 +128,10 @@ int main (int argc, char * argv[])
 								putchar(buf[c]);
 							else
 								putchar('\n');
-						sltime = rand() % MAX_SLEEP;
-						printf("Going to sleep for %d seconds\n", sltime);
+						sltime = (rand() % MAX_SLEEP)+1;
+						printf("Going to sleep for %d second(s)\n", sltime);
 						sleep(sltime);
-					}
-					else if (result == 0)
-					{
-						puts("Server out of reach?");
+						puts("Woke up ...");
 					}
 				} while (result != FAIL);
 			}
