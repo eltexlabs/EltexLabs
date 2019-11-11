@@ -16,15 +16,23 @@
 #define FAIL -1
 #define COND_EXIT(COND, EXMSG) { if (COND) { printf("=== Error in %s() ===\n%s\n", __func__, EXMSG); exit(EXIT_FAILURE); } }
 #define COND_MSG(COND, MSG) { if (COND) { printf("=== Warning in %s() ===\n%s\n", __func__, MSG); } }
-//#define COND_TEXIT(COND, EXMSG) { if (COND) { printf("=== Error in %s() ===\n%s\n", __func__, EXMSG); pthread_exit(NULL); } }
-#define DEBUG
+//#define DEBUG
 
 #define CL_TRYCOUNT 10	// Client number of connect attempts
 #define SHD_RD	0
 #define SHD_WR	1
 #define SHD_ALL	2
+#define MSG_ECHO1	"udp1"
+#define MSG_ECHO2	"udp2"
+#define BUF_SZ		120
+#define SV_MSQ_SZ	10
+#define MAX_SLEEP	3	// Max sleep time
+
+#define NUM_STRINGS		10
+#define STRINGS			"some", "text", "strings", "containing", "useless", "text", "bla-bla-bla", "lol", "kek", "cheburek"
 
 // Message types
+/*
 #pragma pack(1)
 typedef enum msgtype_t
 {
@@ -68,10 +76,12 @@ typedef struct msg_echo_t
 	msg_base_t head;	// Base: header
 	msggroup_t group;	// Data: group
 } msg_echo_t;
-
+*/
 
 // Func prototypes
 extern void PrepInetClientSock(const char * address, int port, int * sock, void * sockaddr, bool udp);
 extern void PrepInetServerSock(const char * address, int port, int * sock, void * sockaddr, bool udp, int qsize);
+extern char * AllocString(const char * str);
+extern void FreeString(char * str);
 
 extern int UserQuit();

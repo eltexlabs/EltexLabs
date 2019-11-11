@@ -159,4 +159,27 @@ int UserQuit()
 	return 0;
 }
 
-//void msg_header_init(msg_base_t * header, , uint32_t datasize)
+char * AllocString(const char * str)
+{
+	char * newstr;
+	int len;
+	
+	len = strlen(str) + 1;
+	newstr = malloc(len);
+	strcpy(newstr, str);
+	
+	#ifdef DEBUG
+	printf("Allocated string: %s at %p\n", str, newstr);
+	#endif
+	
+	return newstr;
+}
+
+void FreeString(char * str)
+{
+	#ifdef DEBUG
+	printf("Freeing string: %s at %p\n", str, str);
+	#endif
+	
+	free(str);
+}

@@ -38,11 +38,14 @@
 int main (int argc, char * argv[])
 {
 	int tcp_port, udp_port;
-	int cl_sock, udp_sock; // sv_sock,
+	int cl_sock, udp_sock;
 	struct sockaddr_in cl_addr, sv_addr, udp_addr;
-	int result;//, optarg;
+	int result;
 	int try;
+	int c;	// Counters
+	int sltime;
 	char * address;
+	char buf[BUF_SZ];
 	
 	puts("Client: starting up ...\n");
 	
@@ -57,10 +60,14 @@ int main (int argc, char * argv[])
 	sscanf(argv[2], "%d", &tcp_port);
 	sscanf(argv[3], "%d", &udp_port);
 	
+	// Init randomizer
+	srand( time(NULL) );
+	
 	// Prepare TCP client socket
 	puts("Client: opening TCP socket ...");
 	PrepInetClientSock(address, tcp_port, &cl_sock, &cl_addr, false);
 	shutdown(cl_sock, SHD_WR);	// Write only
+	fcntl(cl_sock, F_SETFL, O_NONBLOCK);
 	
 	// Prepare UDP client socket
 	puts("Client: opening UDP socket ...");
@@ -87,35 +94,49 @@ int main (int argc, char * argv[])
 	COND_EXIT(result == FAIL, "connect() error");
 	
 	// Main loop
-	/*fd_set fds;
-	struct timeval tout;
-	FD_ZERO(&fds);
-	FD_SET(udp_sock, &fds);
-	tout.tv_sec = 2;
-	tout.tv_usec = 0;*/
 	while (!UserQuit())
 	{
 		// Check out UDP
-		char buf[300];
 		socklen_t sz = sizeof(udp_addr);
 		
+		#ifdef DEBUG
 		puts("Checking UDP ...");
+		#endif
 		result = recvfrom(udp_sock, buf, sizeof(buf), 0, (struct sockaddr *) &udp_addr, &sz); //MSG_DONTWAIT
 		if (result != FAIL)
 		{
-			if (!strcmp(buf, "udp2"))
+			if (!strcmp(buf, MSG_ECHO2))
 			{
 				puts("Got UDP echo from server ...");
-				result = recv(cl_sock, buf, sizeof(buf), 0);
-				if (result != FAIL)
+				
+				do
 				{
-					puts("TCP message from server:");
-					puts(buf);
-				}
+					result = recv(cl_sock, buf, sizeof(buf), 0);
+					if (result != FAIL)
+					{
+						puts("TCP message from server:");
+						for (c = 0; c < result; c++)
+							if (buf[c] != '\0')
+								putchar(buf[c]);
+							else
+								putchar('\n');
+						sltime = rand() % MAX_SLEEP;
+						printf("Going to sleep for %d seconds\n", sltime);
+						sleep(sltime);
+					}
+					else if (result == 0)
+					{
+						puts("Server out of reach?");
+					}
+				} while (result != FAIL);
 			}
 		}
 		else
+		{
+			#ifdef DEBUG
 			puts("Nothing on UDP");
+			#endif
+		}
 		
 		sleep(1);
 	}
