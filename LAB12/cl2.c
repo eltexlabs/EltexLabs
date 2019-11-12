@@ -47,6 +47,9 @@ int main (int argc, char * argv[])
 	char * address;
 	char buf[BUF_SZ];
 	bool quit;
+	bool auth;
+	int auth_counter;
+	bool wait;
 	
 	puts("Client: starting up ...\n");
 	
@@ -62,13 +65,13 @@ int main (int argc, char * argv[])
 	sscanf(argv[3], "%d", &udp_port);
 	
 	// Init randomizer
-	srand( time(NULL) );
+	srand( time(NULL) + getpid() );
 	
 	// Prepare TCP client socket
-	puts("Client: opening TCP socket ...");
-	PrepInetClientSock(address, tcp_port, &cl_sock, &cl_addr, false);
-	shutdown(cl_sock, SHD_WR);	// Write only
-	fcntl(cl_sock, F_SETFL, O_NONBLOCK);
+	//puts("Client: opening TCP socket ...");
+	//PrepInetClientSock(address, tcp_port, &cl_sock, &cl_addr, false);
+	//shutdown(cl_sock, SHD_WR);	// Read only
+	//fcntl(cl_sock, F_SETFL, O_NONBLOCK);
 	
 	// Prepare UDP client socket
 	puts("Client: opening UDP socket ...");
@@ -78,71 +81,148 @@ int main (int argc, char * argv[])
 	// Prepare server address
 	memset(&sv_addr, 0x00, sizeof(struct sockaddr));	// Clean struct
 	
-	// Connect to server via TCP
-	for (try = 0; try < CL_TRYCOUNT; try++)
-	{
-		sleep(1);	// Period between attempts
-		
-		result = connect(cl_sock, (struct sockaddr *) &cl_addr, sizeof(cl_addr));
-		if (result == FAIL)
-			printf("Client: connect attempt #%d failed \n", try);
-		else
-		{
-			printf("Connected to server (0x%x, %d)\n", htonl(cl_addr.sin_addr.s_addr), htons(cl_addr.sin_port));
-			break;
-		}
-	}
-	COND_EXIT(result == FAIL, "connect() error");
-	
 	// Main loop
 	quit = false;
+	auth = false;
+	auth_counter = 0;
+	wait = true;
 	while (!UserQuit() && !quit)
 	{
-		// Check out UDP
-		socklen_t sz = sizeof(udp_addr);
-		
-		#ifdef DEBUG
-		puts("Checking UDP ...");
-		#endif
-		result = recvfrom(udp_sock, buf, sizeof(buf), 0, (struct sockaddr *) &udp_addr, &sz); //MSG_DONTWAIT
-		if (result != FAIL)
+		if (wait)
 		{
-			if (!strcmp(buf, MSG_ECHO2))
+			puts("Waiting for UDP ...");
+			
+			// Check out UDP
+			socklen_t sz = sizeof(udp_addr);
+			
+			#ifdef DEBUG
+			puts("Checking UDP ...");
+			#endif
+			result = recvfrom(udp_sock, buf, sizeof(buf), 0, (struct sockaddr *) &udp_addr, &sz); //MSG_DONTWAIT
+			if (result != FAIL)
 			{
-				puts("Got UDP echo from server ...");
-				
-				do
+				if (!strcmp(buf, MSG_ECHO2))
 				{
-					result = recv(cl_sock, buf, sizeof(buf), 0);
-					if (result == 0)
+					puts("Got UDP echo from server, connecting ...");
+					
+					// Prepare TCP client socket
+					puts("Client: opening TCP socket ...");
+					PrepInetClientSock(address, tcp_port, &cl_sock, &cl_addr, false);
+					fcntl(cl_sock, F_SETFL, O_NONBLOCK);
+					
+					// Try to connect to server via TCP
+					for (try = 0; try < CL_TRYCOUNT; try++)
 					{
-						puts("Server out of reach ...");
-						quit = true;
-						break;
+						sleep(1);	// Period between attempts
+						
+						result = connect(cl_sock, (struct sockaddr *) &cl_addr, sizeof(cl_addr));
+						if (result == FAIL)
+							printf("Client: connect attempt #%d failed \n", try);
+						else
+						{
+							printf("Connected to server (0x%x, %d)\n", htonl(cl_addr.sin_addr.s_addr), htons(cl_addr.sin_port));
+							auth = false;
+							auth_counter = 0;
+							wait = false;
+							break;
+						}
 					}
-					else if (result != FAIL)
-					{
-						puts("TCP message from server:");
-						for (c = 0; c < result; c++)
-							if (buf[c] != '\0')
-								putchar(buf[c]);
-							else
-								putchar('\n');
-						sltime = (rand() % MAX_SLEEP)+1;
-						printf("Going to sleep for %d second(s)\n", sltime);
-						sleep(sltime);
-						puts("Woke up ...");
-					}
-				} while (result != FAIL);
+					COND_EXIT(result == FAIL, "connect() error");
+				}
 			}
+			else
+			{
+				#ifdef DEBUG
+				puts("Nothing on UDP");
+				#endif
+			}
+		}
+		
+		if (!auth && !wait)
+		{
+			// Not authorized on the server //
+			
+			if (auth_counter == 0)
+			{
+				// Send auth request once per N cycles
+				puts("Sending auth request ...");
+				send(cl_sock, MSG_AUTH2, sizeof(MSG_AUTH2), 0);
+			}
+			else
+			{
+				// Check auth response
+				puts("Checking auth response ...");
+				result = recv(cl_sock, buf, sizeof(buf), 0);
+				if (result == 0)
+				{
+					puts("Server is out of reach");
+					quit = true;
+				}
+				else if (result != FAIL)
+				{
+					if (!strcmp(buf, MSG_AUTH_ACK))
+					{
+						puts("Authenticated");
+						auth = true;
+					}
+					else if (!strcmp(buf, MSG_AUTH_DENY))
+					{
+						puts("Authentication failed");
+						quit = true;
+					}
+					else
+					{
+						#ifdef DEBUG
+						puts("Bad auth message from server");
+						#endif
+					}
+				}
+			}
+			
+			if (++auth_counter > 10)
+				auth_counter = 0;
 		}
 		else
 		{
-			#ifdef DEBUG
-			puts("Nothing on UDP");
-			#endif
+			// Check out TCP
+			do
+			{
+				result = recv(cl_sock, buf, sizeof(buf), 0);
+				if (result == 0)
+				{
+					puts("Server out of reach ...");
+					quit = true;
+					break;
+				}
+				else if (result != FAIL)
+				{
+					puts("TCP message from server:");
+					for (c = 0; c < result; c++)
+						if (buf[c] != '\0')
+							putchar(buf[c]);
+						else
+							putchar('\n');
+					sltime = (rand() % MAX_SLEEP)+1;
+					puts("Disconnecting ...");
+					close(cl_sock);
+					wait = true;
+					auth = false;
+					auth_counter = 0;
+					printf("Going to sleep for %d second(s)\n", sltime);
+					sleep(sltime);
+					puts("Woke up ...");
+					break;
+				}
+				else
+				{
+					#ifdef DEBUG
+					puts("Nothing on TCP");
+					#endif
+				}
+			} while (result != FAIL);
 		}
 		
+		// Wait for next cycle
 		sleep(1);
 	}
 	

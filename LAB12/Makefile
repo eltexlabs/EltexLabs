@@ -11,3 +11,9 @@ cl2.elf: cl2.c shared.o
 
 shared.o: shared.c
 	gcc -std=c99 -Wall -c -o shared.o shared.c
+
+clean:
+	rm shared.o
+	rm serv.elf
+	rm cl1.elf
+	rm cl2.elf

@@ -46,6 +46,9 @@ int main (int argc, char * argv[])
 	char * address;
 	char buf[BUF_SZ];
 	char * strings[NUM_STRINGS] = {STRINGS};
+	bool quit;
+	bool auth;
+	int auth_counter;
 	
 	puts("Client: starting up ...\n");
 	
@@ -61,12 +64,13 @@ int main (int argc, char * argv[])
 	sscanf(argv[3], "%d", &udp_port);
 	
 	// Init randomizer
-	srand( time(NULL) );
+	srand( time(NULL) + getpid() );
 	
 	// Prepare TCP client socket
 	puts("Client: opening TCP socket ...");
 	PrepInetClientSock(address, tcp_port, &cl_sock, &cl_addr, false);
-	shutdown(cl_sock, SHD_RD);	// Write only
+	//shutdown(cl_sock, SHD_RD);	// Write only
+	fcntl(cl_sock, F_SETFL, O_NONBLOCK);
 	
 	// Prepare UDP client socket
 	puts("Client: opening UDP socket ...");
@@ -93,38 +97,91 @@ int main (int argc, char * argv[])
 	COND_EXIT(result == FAIL, "connect() error");
 	
 	// Main loop
-	while (!UserQuit())
+	quit = false;
+	auth = false;
+	auth_counter = 0;
+	while (!UserQuit() && !quit)
 	{
-		// Check out UDP
-		socklen_t sz = sizeof(udp_addr);
-		
-		#ifdef DEBUG
-		puts("Checking UDP ...");
-		#endif
-		result = recvfrom(udp_sock, buf, sizeof(buf), 0, (struct sockaddr *) &udp_addr, &sz); //MSG_DONTWAIT
-		if (result != FAIL)
+		if (!auth)
 		{
-			if (!strcmp(buf, MSG_ECHO1))
+			// Not authorized on the server //
+			
+			if (auth_counter == 0)
 			{
-				puts("Got UDP echo from server ...");
-				sltime = (rand() % MAX_SLEEP)+1;
-				printf("Going to sleep for %d second(s)\n", sltime);
-				sleep(sltime);
-				puts("Woke up ...");
-				
-				result = rand() % (NUM_STRINGS);
-				printf("Sending response: %s \n", strings[result]);
-				strcpy(buf, strings[result]);
-				send(cl_sock, buf, strlen(buf)+1, 0);
+				// Send auth request once per N cycles
+				puts("Sending auth request ...");
+				send(cl_sock, MSG_AUTH1, sizeof(MSG_AUTH1), 0);
 			}
+			else
+			{
+				// Check auth response
+				puts("Checking auth response ...");
+				result = recv(cl_sock, buf, sizeof(buf), 0);
+				if (result == 0)
+				{
+					puts("Server is out of reach");
+					quit = true;
+				}
+				else if (result != FAIL)
+				{
+					if (!strcmp(buf, MSG_AUTH_ACK))
+					{
+						puts("Authenticated");
+						auth = true;
+					}
+					else if (!strcmp(buf, MSG_AUTH_DENY))
+					{
+						puts("Authentication failed");
+						quit = true;
+					}
+					else
+					{
+						#ifdef DEBUG
+						puts("Bad auth message from server");
+						#endif
+					}
+				}
+			}
+			
+			if (++auth_counter > 10)
+				auth_counter = 0;
 		}
 		else
 		{
+			// Authorized on server //
+			
+			// Check out UDP
+			socklen_t sz = sizeof(udp_addr);
+			
 			#ifdef DEBUG
-			puts("Nothing on UDP");
+			puts("Checking UDP ...");
 			#endif
+			result = recvfrom(udp_sock, buf, sizeof(buf), 0, (struct sockaddr *) &udp_addr, &sz); //MSG_DONTWAIT
+			if (result != FAIL)
+			{
+				if (!strcmp(buf, MSG_ECHO1))
+				{
+					puts("Got UDP echo from server ...");
+					sltime = (rand() % MAX_SLEEP)+1;
+					printf("Going to sleep for %d second(s)\n", sltime);
+					sleep(sltime);
+					puts("Woke up ...");
+					
+					result = rand() % (NUM_STRINGS);
+					printf("Sending response: %s \n", strings[result]);
+					strcpy(buf, strings[result]);
+					send(cl_sock, buf, strlen(buf)+1, 0);
+				}
+			}
+			else
+			{
+				#ifdef DEBUG
+				puts("Nothing on UDP");
+				#endif
+			}
 		}
 		
+		// Wait for next cycle
 		sleep(1);
 	}
 	

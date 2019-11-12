@@ -22,14 +22,19 @@
 #define SHD_RD	0
 #define SHD_WR	1
 #define SHD_ALL	2
-#define MSG_ECHO1	"udp1"
-#define MSG_ECHO2	"udp2"
 #define BUF_SZ		120
 #define SV_MSQ_SZ	10
 #define MAX_SLEEP	3	// Max sleep time
 
 #define NUM_STRINGS		10
-#define STRINGS			"some", "text", "strings", "containing", "useless", "text", "bla-bla-bla", "lol", "kek", "cheburek"
+#define STRINGS			"quick", "brown", "fox", "jumps", "over", "the", "lazy", "dog", "doge", "bla-bla-bla"
+
+#define MSG_ECHO1		"udp1"
+#define MSG_ECHO2		"udp2"
+#define MSG_AUTH1		"tcp1"
+#define MSG_AUTH2		"tcp2"
+#define MSG_AUTH_ACK	"okay"
+#define MSG_AUTH_DENY	"nope"
 
 // Message types
 /*

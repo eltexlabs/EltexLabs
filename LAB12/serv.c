@@ -31,6 +31,19 @@
 #define SERV_QSZ	5	// Server queue size
 #define SERV_TLOOP	1
 
+typedef enum cltype_t
+{
+	CL_UNKNOWN = -1,
+	CL_EMITTER = 0,
+	CL_WORKER = 1,
+} cltype_t;
+
+typedef struct client_t
+{
+	int sock;
+	cltype_t type;
+} client_t;
+
 // Prototypes //
 
 
@@ -42,9 +55,10 @@ int main (int argc, char * argv[])
 
 	int num_clients, max_clients;
 	int tcp_port, udp_port;
-	int sv_sock, *cl_socks, udp_sock, temp_sock;
+	int sv_sock, udp_sock, temp_sock; // *cl_socks, 
+	client_t * clients;
 	struct sockaddr_in sv_addr, cl_addr, udp_addr;
-	int cl, m; //counter, // Counters
+	int cl; //, m; //counter, // Counters
 	int result;
 	char buf[BUF_SZ];
 	char * msq[SV_MSQ_SZ];
@@ -66,12 +80,15 @@ int main (int argc, char * argv[])
 		max_clients = 1;
 	
 	// Alloc mem
-	cl_socks = calloc( max_clients, sizeof(*cl_socks) );
+	clients = calloc( max_clients, sizeof(*clients) );
 	
 	// Prepare TCP client sockets
 	num_clients = 0;
 	for (cl = 0; cl < max_clients; cl++)
-		cl_socks[cl] = -1;
+	{
+		clients[cl].sock = -1;
+		clients[cl].type = CL_UNKNOWN;
+	}
 	
 	// Prepare UDP server socket
 	puts("Server: opening UDP socket ...");
@@ -111,10 +128,11 @@ int main (int argc, char * argv[])
 				{
 					// Accept
 					for (cl = 0; cl < max_clients; cl++)
-						if (cl_socks[cl] == -1)
+						if (clients[cl].sock == -1)
 							break;
-					cl_socks[cl] = temp_sock;
-					fcntl(cl_socks[cl], F_SETFL, O_NONBLOCK);
+					clients[cl].type = CL_UNKNOWN;
+					clients[cl].sock = temp_sock;
+					fcntl(clients[cl].sock, F_SETFL, O_NONBLOCK);
 					num_clients++;
 				}
 				else
@@ -133,7 +151,7 @@ int main (int argc, char * argv[])
 			}
 		}
 		
-		// Check message queue
+		// Check if message queue is not full
 		if (num_msq < SV_MSQ_SZ)
 		{
 			// Send UDP request to client
@@ -152,8 +170,9 @@ int main (int argc, char * argv[])
 					exit(1);
 				}
 			//}
-			
-			// Check response
+		}
+		
+			// Check TCP responses
 			#ifdef DEBUG
 			puts("Checking TCP ...");
 			#endif
@@ -161,28 +180,63 @@ int main (int argc, char * argv[])
 			for (cl = 0; cl < max_clients; cl++)
 			{
 				// Skip non-connected sockets
-				if (cl_socks[cl] == -1)
+				if (clients[cl].sock == -1)
 					break;
 				
 				// Recieve data
-				result = recvfrom(cl_socks[cl], buf, sizeof(buf), 0, (struct sockaddr *) NULL, NULL); //MSG_DONTWAIT
+				result = recvfrom(clients[cl].sock, buf, sizeof(buf), 0, (struct sockaddr *) NULL, NULL); //MSG_DONTWAIT
 				if (result != FAIL)
 				{
 					if (result != 0)
 					{
-						printf("Got message from client: %s \n", buf);
-						
-						// Add message to queue
-						msq[num_msq] = AllocString(buf);
-						num_msq++;
-						if (num_msq >= SV_MSQ_SZ)
-							break;
+						// Check client type
+						if (clients[cl].type == CL_EMITTER)
+						{
+							// Emitter sent new workload //
+							
+							if (num_msq < SV_MSQ_SZ)
+							{
+								// Add message to queue
+								printf("Got message from client: %s \n", buf);
+								msq[num_msq] = AllocString(buf);
+								num_msq++;
+								if (num_msq >= SV_MSQ_SZ)
+									break;
+							}
+						}
+						else if (clients[cl].type == CL_WORKER)
+						{
+							// Worker sent something? //
+							printf("Got message from worker: %s \n", buf);
+						}
+						else
+						{
+							// Should be authentication message //
+							if ( !strcmp(buf, MSG_AUTH1) )
+							{
+								clients[cl].type = CL_EMITTER;
+								send(clients[cl].sock, MSG_AUTH_ACK, sizeof(MSG_AUTH_ACK), 0);
+								puts("Client of type 1 (emitter) authenticated");
+							}
+							else if ( !strcmp(buf, MSG_AUTH2) )
+							{
+								clients[cl].type = CL_WORKER;
+								send(clients[cl].sock, MSG_AUTH_ACK, sizeof(MSG_AUTH_ACK), 0);
+								puts("Client of type 2 (worker) authenticated");
+							}
+							else
+							{
+								// Bad auth? //
+								printf("Bad auth message: %s \n", buf);
+							}
+						}
 					}
 					else
 					{
 						// Disconnected - close socket and mark as non-connected
-						close(cl_socks[cl]);
-						cl_socks[cl] = -1;
+						close(clients[cl].sock);
+						clients[cl].sock = -1;
+						clients[cl].type = CL_UNKNOWN;
 						num_clients--;
 						puts("Client disconnected ...");
 					}
@@ -194,11 +248,13 @@ int main (int argc, char * argv[])
 					#endif
 				}
 			}
-		}
-		else
+		//}
+		
+		// Check if message queue is not empty
+		if (num_msq > 0)
 		{
-			for (m = 0; m < num_msq; m++)
-			{
+			//for (m = 0; m < num_msq; m++)
+			//{
 				puts("Sending UDP broadcast to clients #2 ...");
 				if (sendto(udp_sock, MSG_ECHO2, sizeof(MSG_ECHO2), 0, (struct sockaddr *) &udp_addr,
 				 sizeof(udp_addr)) != sizeof(MSG_ECHO2))
@@ -207,19 +263,51 @@ int main (int argc, char * argv[])
 					exit(1);
 				}
 				
-				// Send all messages for each client
+				// Send messages to clients of type 2
+				for (cl = 0; cl < max_clients; cl++)
+				{
+					if (clients[cl].sock != -1 && clients[cl].type == CL_WORKER)
+					{
+						// Send last message and remove it from queue
+						num_msq--;
+						result = send(clients[cl].sock, msq[num_msq], strlen(msq[num_msq])+1, MSG_NOSIGNAL);
+						//printf("========= Send result: %d \n", result);
+							// MSG_NOSIGNAL - prevent unhandled SIGPIPE terminating process
+						if (result == FAIL)
+						{
+							// Client has disconnected, skip
+							puts("Client dropped connection ...");
+							close(clients[cl].sock);
+							clients[cl].sock = -1;
+							clients[cl].type = CL_UNKNOWN;
+							num_clients--;
+							num_msq++;
+							continue;
+						}
+						FreeString(msq[num_msq]);
+						
+						// Check if queue is empty
+						if (num_msq == 0)
+							break;
+					}
+				}
+				
+				#ifdef DEBUG
+				puts("Messages sent to workers ...");
+				#endif
+				/*// Send all messages for each client of type 2
 				puts("Sending TCP messages ...");
 				for (m = 0; m < num_msq; m++)
 				{
 					for (cl = 0; cl < max_clients; cl++)
-						if (cl_socks[cl] != -1)
-							send(cl_socks[cl], msq[m], strlen(msq[m])+1, 0);
-				}
-			}
-			// Clear queue
+						if (clients[cl].sock != -1 && clients[cl].type == CL_WORKER)
+							send(clients[cl].sock, msq[m], strlen(msq[m])+1, 0);
+				}*/
+			//}
+			/*// Clear queue
 			for (m = 0; m < num_msq; m++)
 				FreeString(msq[m]);
-			num_msq = 0;
+			num_msq = 0;*/
 		}
 		
 		sleep(1);
@@ -229,11 +317,11 @@ int main (int argc, char * argv[])
 	close(udp_sock);
 	close(sv_sock);
 	for (cl = 0; cl < max_clients; cl++)
-		if (cl_socks[cl] != -1)
-			close(cl_socks[cl]);
+		if (clients[cl].sock != -1)
+			close(clients[cl].sock);
 	
 	// Free memory
-	free(cl_socks);
+	free(clients);
 	
 	puts("Server: shutting down\n");
 	return EXIT_SUCCESS;
