@@ -23,7 +23,8 @@
 #define SHD_WR	1
 #define SHD_ALL	2
 #define BUF_SZ		120
-#define SV_MSQ_SZ	10
+#define SV_MSG_QSZ	10	// Server messages queue size
+#define SV_SOCK_QSZ	5	// Server socket queue size
 #define MAX_SLEEP	3	// Max sleep time
 
 #define NUM_STRINGS		10

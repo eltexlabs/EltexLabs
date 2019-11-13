@@ -28,8 +28,6 @@
 
 
 // Definitions and typedefs //
-#define SERV_QSZ	5	// Server queue size
-#define SERV_TLOOP	1
 
 typedef enum cltype_t
 {
@@ -61,8 +59,11 @@ int main (int argc, char * argv[])
 	int cl; //, m; //counter, // Counters
 	int result;
 	char buf[BUF_SZ];
-	char * msq[SV_MSQ_SZ];
+	char * msq[SV_MSG_QSZ];
 	int num_msq;
+	fd_set fdset;
+	struct timeval tout;
+	int fdmax;
 	
 	puts("Server: starting up ...\n");
 	
@@ -92,16 +93,16 @@ int main (int argc, char * argv[])
 	
 	// Prepare UDP server socket
 	puts("Server: opening UDP socket ...");
-	PrepInetServerSock(NULL, udp_port, &udp_sock, &udp_addr, true, SERV_QSZ);
+	PrepInetServerSock(NULL, udp_port, &udp_sock, &udp_addr, true, SV_SOCK_QSZ);
 	
 	// Prepare TCP server socket
 	puts("Server: opening TCP socket ...");
-	PrepInetServerSock(NULL, tcp_port, &sv_sock, &sv_addr, false, SERV_QSZ);
+	PrepInetServerSock(NULL, tcp_port, &sv_sock, &sv_addr, false, SV_SOCK_QSZ);
 	fcntl(sv_sock, F_SETFL, O_NONBLOCK);
 	
 	// Main loop
 	num_msq = 0;
-	//counter = 0;
+	//int counter = 0;
 	while (!UserQuit())
 	{
 		// Check connections
@@ -111,50 +112,12 @@ int main (int argc, char * argv[])
 			// full: send messages
 				// send UDP for cl2
 		
-		#ifdef DEBUG
-		puts("Checking incoming connections ...");
-		#endif
-		while (1)
-		{
-			// Check for incoming connections
-			socklen_t socklen = sizeof(cl_addr);
-			temp_sock = accept(sv_sock, (struct sockaddr *) &cl_addr, &socklen);
-			if (temp_sock != FAIL)
-			{
-				printf("Client connected (0x%X, %d)\n", htonl(cl_addr.sin_addr.s_addr), htons(cl_addr.sin_port));
-				
-				// Check number of connections
-				if (num_clients < max_clients)
-				{
-					// Accept
-					for (cl = 0; cl < max_clients; cl++)
-						if (clients[cl].sock == -1)
-							break;
-					clients[cl].type = CL_UNKNOWN;
-					clients[cl].sock = temp_sock;
-					fcntl(clients[cl].sock, F_SETFL, O_NONBLOCK);
-					num_clients++;
-				}
-				else
-				{
-					// Reject
-					puts("Too many clients, dropping connection");
-					close(temp_sock);
-				}
-			}
-			else
-			{
-				#ifdef DEBUG
-				puts("No connections");
-				#endif
-				break;
-			}
-		}
 		
 		// Check if message queue is not full
-		if (num_msq < SV_MSQ_SZ)
+		//counter++;
+		if (num_msq < SV_MSG_QSZ) // && (counter % 10) == 0)
 		{
-			// Send UDP request to client
+			// Send UDP request to clients of type 1
 			//if (counter < 2)
 			//	counter++;
 			//else
@@ -172,83 +135,150 @@ int main (int argc, char * argv[])
 			//}
 		}
 		
-			// Check TCP responses
-			#ifdef DEBUG
-			puts("Checking TCP ...");
-			#endif
-			strcpy(buf, "");
-			for (cl = 0; cl < max_clients; cl++)
+		// Prepare fd set and timeout for select()
+		FD_ZERO(&fdset);	// set should be reset before each select() call
+		FD_SET(sv_sock, &fdset);
+		fdmax = sv_sock;
+		for (cl = 0; cl < max_clients; cl++)
+		{
+			if (clients[cl].sock != -1)
 			{
-				// Skip non-connected sockets
-				if (clients[cl].sock == -1)
-					break;
-				
-				// Recieve data
-				result = recvfrom(clients[cl].sock, buf, sizeof(buf), 0, (struct sockaddr *) NULL, NULL); //MSG_DONTWAIT
-				if (result != FAIL)
+				FD_SET(clients[cl].sock, &fdset);
+				if (fdmax < clients[cl].sock)	// Determine biggest fd
+					fdmax = clients[cl].sock;
+			}
+		}
+		tout.tv_sec = 1;	// timeout should be reset before each select() call
+		tout.tv_usec = 0;
+		
+		// Wait for something to happen in given time
+		result = select(fdmax+1, &fdset, NULL, NULL, &tout);	// Biggest fd + 1
+		COND_EXIT(result == FAIL, "select() error");
+		
+		// Check incoming connections
+		if ( FD_ISSET(sv_sock, &fdset) )
+		{
+			#ifdef DEBUG
+			puts("Checking incoming connections ...");
+			#endif
+			// Loop until all incoming connections are checked
+			while (1)
+			{
+				socklen_t socklen = sizeof(cl_addr);
+				temp_sock = accept(sv_sock, (struct sockaddr *) &cl_addr, &socklen);
+				if (temp_sock != FAIL)
 				{
-					if (result != 0)
+					printf("Client connected (0x%X, %d)\n", htonl(cl_addr.sin_addr.s_addr), htons(cl_addr.sin_port));
+					
+					// Check number of connections
+					if (num_clients < max_clients)
 					{
-						// Check client type
-						if (clients[cl].type == CL_EMITTER)
-						{
-							// Emitter sent new workload //
-							
-							if (num_msq < SV_MSQ_SZ)
-							{
-								// Add message to queue
-								printf("Got message from client: %s \n", buf);
-								msq[num_msq] = AllocString(buf);
-								num_msq++;
-								if (num_msq >= SV_MSQ_SZ)
-									break;
-							}
-						}
-						else if (clients[cl].type == CL_WORKER)
-						{
-							// Worker sent something? //
-							printf("Got message from worker: %s \n", buf);
-						}
-						else
-						{
-							// Should be authentication message //
-							if ( !strcmp(buf, MSG_AUTH1) )
-							{
-								clients[cl].type = CL_EMITTER;
-								send(clients[cl].sock, MSG_AUTH_ACK, sizeof(MSG_AUTH_ACK), 0);
-								puts("Client of type 1 (emitter) authenticated");
-							}
-							else if ( !strcmp(buf, MSG_AUTH2) )
-							{
-								clients[cl].type = CL_WORKER;
-								send(clients[cl].sock, MSG_AUTH_ACK, sizeof(MSG_AUTH_ACK), 0);
-								puts("Client of type 2 (worker) authenticated");
-							}
-							else
-							{
-								// Bad auth? //
-								printf("Bad auth message: %s \n", buf);
-							}
-						}
+						// Accept
+						for (cl = 0; cl < max_clients; cl++)
+							if (clients[cl].sock == -1)
+								break;
+						clients[cl].type = CL_UNKNOWN;
+						clients[cl].sock = temp_sock;
+						fcntl(clients[cl].sock, F_SETFL, O_NONBLOCK);
+						//FD_SET(clients[cl].sock, &fdset);
+						num_clients++;
 					}
 					else
 					{
-						// Disconnected - close socket and mark as non-connected
-						close(clients[cl].sock);
-						clients[cl].sock = -1;
-						clients[cl].type = CL_UNKNOWN;
-						num_clients--;
-						puts("Client disconnected ...");
+						// Reject
+						puts("Too many clients, dropping connection");
+						close(temp_sock);
 					}
 				}
 				else
 				{
 					#ifdef DEBUG
-					puts("Nothing on TCP");
+					puts("No connections");
 					#endif
+					break;
 				}
 			}
-		//}
+		}
+		
+		// Check TCP responses
+		#ifdef DEBUG
+		puts("Checking TCP ...");
+		#endif
+		strcpy(buf, "");
+		for (cl = 0; cl < max_clients; cl++)
+		{
+			// Skip client entries with non-connected sockets and sockets without FD_SET
+			if (clients[cl].sock == -1)
+				continue;
+			if ( !FD_ISSET( clients[cl].sock, &fdset) )
+				continue;
+			
+			// Recieve data
+			result = recvfrom(clients[cl].sock, buf, sizeof(buf), 0, (struct sockaddr *) NULL, NULL); //MSG_DONTWAIT
+			if (result != FAIL)
+			{
+				if (result != 0)
+				{
+					// Check client type
+					if (clients[cl].type == CL_EMITTER)
+					{
+						// Emitter sent new workload //
+						
+						if (num_msq < SV_MSG_QSZ)
+						{
+							// Add message to queue
+							printf("Got message from client: %s \n", buf);
+							msq[num_msq] = AllocString(buf);
+							num_msq++;
+							if (num_msq >= SV_MSG_QSZ)
+								break;
+						}
+					}
+					else if (clients[cl].type == CL_WORKER)
+					{
+						// Worker sent something? //
+						printf("Got message from worker: %s \n", buf);
+					}
+					else
+					{
+						// Should be authentication message //
+						if ( !strcmp(buf, MSG_AUTH1) )
+						{
+							clients[cl].type = CL_EMITTER;
+							send(clients[cl].sock, MSG_AUTH_ACK, sizeof(MSG_AUTH_ACK), 0);
+							puts("Client of type 1 (emitter) authenticated");
+						}
+						else if ( !strcmp(buf, MSG_AUTH2) )
+						{
+							clients[cl].type = CL_WORKER;
+							send(clients[cl].sock, MSG_AUTH_ACK, sizeof(MSG_AUTH_ACK), 0);
+							puts("Client of type 2 (worker) authenticated");
+						}
+						else
+						{
+							// Bad auth? //
+							printf("Bad auth message: %s \n", buf);
+						}
+					}
+				}
+				else
+				{
+					// Disconnected - close socket and mark as non-connected
+					//FD_CLR(clients[cl].sock, &fdset);
+					close(clients[cl].sock);
+					clients[cl].sock = -1;
+					clients[cl].type = CL_UNKNOWN;
+					num_clients--;
+					puts("Client disconnected ...");
+				}
+			}
+			else
+			{
+				#ifdef DEBUG
+				puts("Nothing on TCP");
+				#endif
+			}
+		}
 		
 		// Check if message queue is not empty
 		if (num_msq > 0)
@@ -263,7 +293,7 @@ int main (int argc, char * argv[])
 					exit(1);
 				}
 				
-				// Send messages to clients of type 2
+				// Send messages to clients of type 2 (if present)
 				for (cl = 0; cl < max_clients; cl++)
 				{
 					if (clients[cl].sock != -1 && clients[cl].type == CL_WORKER)
@@ -275,8 +305,9 @@ int main (int argc, char * argv[])
 							// MSG_NOSIGNAL - prevent unhandled SIGPIPE terminating process
 						if (result == FAIL)
 						{
-							// Client has disconnected, skip
+							// Client disconnected, skip
 							puts("Client dropped connection ...");
+							//FD_CLR(clients[cl].sock, &fdset);
 							close(clients[cl].sock);
 							clients[cl].sock = -1;
 							clients[cl].type = CL_UNKNOWN;
@@ -310,7 +341,8 @@ int main (int argc, char * argv[])
 			num_msq = 0;*/
 		}
 		
-		sleep(1);
+		// Wait for the next cycle
+		//sleep(1);
 	}
 	
 	// Close sockets
