@@ -53,6 +53,7 @@ POSSIBILITY OF SUCH DAMAGE.
 
 struct tharg_struct
 {
+	// Arguments for thread function
 	char * filename;
 	int num;
 	uint32_t * csums;
