@@ -23,7 +23,7 @@
 #include <errno.h>
 #include <fcntl.h>
 
-#include "shared.h"	// Header srared with server
+#include "shared.h"	// Header shared with server
 
 
 
@@ -39,6 +39,7 @@ int main (int argc, char * argv[])
 {
 	int tcp_port, udp_port;
 	int cl_sock, udp_sock;
+	socklen_t sock_sz;	// for sendto()/recvfrom()
 	struct sockaddr_in cl_addr, sv_addr, udp_addr;
 	int result;
 	int try;
@@ -49,6 +50,8 @@ int main (int argc, char * argv[])
 	bool quit;
 	bool auth;
 	int auth_counter;
+	fd_set fdset;
+	struct timeval tout;
 	
 	puts("Client: starting up ...\n");
 	
@@ -102,6 +105,11 @@ int main (int argc, char * argv[])
 	auth_counter = 0;
 	while (!UserQuit() && !quit)
 	{
+		// Clear fd set and prepare timeout for select()
+		FD_ZERO(&fdset);	// set should be reset before each select() call
+		tout.tv_sec = 1;	// timeout should be reset before each select() call
+		tout.tv_usec = 0;
+		
 		if (!auth)
 		{
 			// Not authorized on the server //
@@ -114,6 +122,11 @@ int main (int argc, char * argv[])
 			}
 			else
 			{
+				// Wait for something to arrive on TCP socket
+				FD_SET(cl_sock, &fdset);
+				result = select(cl_sock+1, &fdset, NULL, NULL, &tout);
+				COND_EXIT(result == FAIL, "select() error");
+				
 				// Check auth response
 				puts("Checking auth response ...");
 				result = recv(cl_sock, buf, sizeof(buf), 0);
@@ -150,13 +163,21 @@ int main (int argc, char * argv[])
 		{
 			// Authorized on server //
 			
-			// Check out UDP
-			socklen_t sz = sizeof(udp_addr);
-			
 			#ifdef DEBUG
 			puts("Checking UDP ...");
 			#endif
-			result = recvfrom(udp_sock, buf, sizeof(buf), 0, (struct sockaddr *) &udp_addr, &sz); //MSG_DONTWAIT
+			//puts("Waiting for UDP ...");
+			
+			// Wait for something to arrive on UDP socket
+			FD_SET(udp_sock, &fdset);
+			result = select(udp_sock+1, &fdset, NULL, NULL, &tout);
+			COND_EXIT(result == FAIL, "select() error");
+			if ( !FD_ISSET( udp_sock, &fdset) )
+				continue;	// Nothing on UDP - restart loop
+			
+			// Check out UDP
+			sock_sz = sizeof(udp_addr);
+			result = recvfrom(udp_sock, buf, sizeof(buf), 0, (struct sockaddr *) &udp_addr, &sock_sz); //MSG_DONTWAIT
 			if (result != FAIL)
 			{
 				if (!strcmp(buf, MSG_ECHO1))
@@ -168,7 +189,7 @@ int main (int argc, char * argv[])
 					puts("Woke up ...");
 					
 					result = rand() % (NUM_STRINGS);
-					printf("Sending response: %s \n", strings[result]);
+					printf(">>> Sending response: %s \n", strings[result]);
 					strcpy(buf, strings[result]);
 					send(cl_sock, buf, strlen(buf)+1, 0);
 				}
@@ -182,7 +203,7 @@ int main (int argc, char * argv[])
 		}
 		
 		// Wait for next cycle
-		sleep(1);
+		//sleep(1);
 	}
 	
 	// Close sockets

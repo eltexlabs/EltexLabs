@@ -20,7 +20,7 @@
 //#include <sys/un.h>		// Unix
 #include <errno.h>
 
-#include "shared.h"
+#include "shared.h"		// Header shared between clients and server
 
 
 

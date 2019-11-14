@@ -23,7 +23,7 @@
 #include <errno.h>
 #include <fcntl.h>
 
-#include "shared.h"	// Header srared with server
+#include "shared.h"	// Header shared with server
 
 
 
@@ -39,6 +39,7 @@ int main (int argc, char * argv[])
 {
 	int tcp_port, udp_port;
 	int cl_sock, udp_sock;
+	socklen_t sock_sz;	// for sendto()/recvfrom()
 	struct sockaddr_in cl_addr, sv_addr, udp_addr;
 	int result;
 	int try;
@@ -50,6 +51,8 @@ int main (int argc, char * argv[])
 	bool auth;
 	int auth_counter;
 	bool wait;
+	fd_set fdset;
+	struct timeval tout;
 	
 	puts("Client: starting up ...\n");
 	
@@ -88,19 +91,31 @@ int main (int argc, char * argv[])
 	wait = true;
 	while (!UserQuit() && !quit)
 	{
+		// Clear fd set and prepare timeout for select()
+		FD_ZERO(&fdset);	// set should be reset before each select() call
+		tout.tv_sec = 1;	// timeout should be reset before each select() call
+		tout.tv_usec = 0;
+		
 		if (wait)
 		{
-			puts("Waiting for UDP ...");
-			
-			// Check out UDP
-			socklen_t sz = sizeof(udp_addr);
-			
 			#ifdef DEBUG
 			puts("Checking UDP ...");
 			#endif
-			result = recvfrom(udp_sock, buf, sizeof(buf), 0, (struct sockaddr *) &udp_addr, &sz); //MSG_DONTWAIT
+			//puts("Waiting for UDP ...");
+			
+			// Wait for something to arrive on UDP socket
+			FD_SET(udp_sock, &fdset);
+			result = select(udp_sock+1, &fdset, NULL, NULL, &tout);
+			COND_EXIT(result == FAIL, "select() error");
+			if ( !FD_ISSET( udp_sock, &fdset) )
+				continue;	// Nothing on UDP - restart loop
+			
+			// Check out UDP
+			sock_sz = sizeof(udp_addr);
+			result = recvfrom(udp_sock, buf, sizeof(buf), 0, (struct sockaddr *) &udp_addr, &sock_sz); //MSG_DONTWAIT
 			if (result != FAIL)
 			{
+				// Connect to server
 				if (!strcmp(buf, MSG_ECHO2))
 				{
 					puts("Got UDP echo from server, connecting ...");
@@ -150,6 +165,11 @@ int main (int argc, char * argv[])
 			}
 			else
 			{
+				// Wait for something to arrive on TCP socket
+				FD_SET(cl_sock, &fdset);
+				result = select(cl_sock+1, &fdset, NULL, NULL, &tout);
+				COND_EXIT(result == FAIL, "select() error");
+				
 				// Check auth response
 				puts("Checking auth response ...");
 				result = recv(cl_sock, buf, sizeof(buf), 0);
@@ -182,8 +202,16 @@ int main (int argc, char * argv[])
 			if (++auth_counter > 10)
 				auth_counter = 0;
 		}
-		else
+		
+		if (auth && !wait)
 		{
+			// Wait for something to arrive on TCP socket
+			FD_SET(cl_sock, &fdset);
+			result = select(cl_sock+1, &fdset, NULL, NULL, &tout);
+			COND_EXIT(result == FAIL, "select() error");
+			if ( !FD_ISSET( cl_sock, &fdset) )
+				continue;	// Nothing on TCP - restart loop
+			
 			// Check out TCP
 			do
 			{
@@ -196,12 +224,13 @@ int main (int argc, char * argv[])
 				}
 				else if (result != FAIL)
 				{
-					puts("TCP message from server:");
+					printf(">>> TCP message from server: ");
 					for (c = 0; c < result; c++)
 						if (buf[c] != '\0')
 							putchar(buf[c]);
 						else
 							putchar('\n');
+					putchar('\n');
 					sltime = (rand() % MAX_SLEEP)+1;
 					puts("Disconnecting ...");
 					close(cl_sock);
@@ -223,7 +252,7 @@ int main (int argc, char * argv[])
 		}
 		
 		// Wait for next cycle
-		sleep(1);
+		//sleep(1);
 	}
 	
 	// Close sockets
