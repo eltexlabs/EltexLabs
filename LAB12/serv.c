@@ -54,10 +54,10 @@ int main (int argc, char * argv[])
 
 	int num_clients, max_clients;
 	int tcp_port, udp_port;
-	int sv_sock, udp_sock, temp_sock; // *cl_socks, 
+	int sv_sock, udp_sock, temp_sock;
 	client_t * clients;
 	struct sockaddr_in sv_addr, cl_addr, udp_addr;
-	int cl; //, m; //counter, // Counters
+	int cl; // Counters
 	int result;
 	char buf[BUF_SZ];
 	char * msq[SV_MSG_QSZ];
@@ -108,13 +108,6 @@ int main (int argc, char * argv[])
 	u_counter = 0;
 	while (!UserQuit())
 	{
-		// Check connections
-		// Check message queue
-			// not full: Recieve incoming data (select(), peek())
-				// still not full: Send UDP for cl1
-			// full: send messages
-				// send UDP for cl2
-		
 		// Prepare fd set and timeout for select()
 		FD_ZERO(&fdset);	// set should be reset before each select() call
 		FD_SET(sv_sock, &fdset);
@@ -143,96 +136,62 @@ int main (int argc, char * argv[])
 			u_counter++;
 			if (num_msq < SV_MSG_QSZ && num_clients > 0 && (u_counter % 3) == 0)	// u_counter sets frequency of cl1 UDP calls
 			{
-				// Send UDP request to clients of type 1
-				//if (counter < 2)
-				//	counter++;
-				//else
-				//{
-				//	counter = 0;
-					
-					puts("Sending UDP broadcast to clients #1 ...");
-					
-					if (sendto(udp_sock, MSG_ECHO1, sizeof(MSG_ECHO1), 0, (struct sockaddr *) &udp_addr,
-					 sizeof(udp_addr)) != sizeof(MSG_ECHO1))
-					{
-						puts("sendto() error");
-						exit(1);
-					}
-				//}
+				puts("Sending UDP broadcast to clients #1 ...");
+				
+				if (sendto(udp_sock, MSG_ECHO1, sizeof(MSG_ECHO1), 0, (struct sockaddr *) &udp_addr,
+				 sizeof(udp_addr)) != sizeof(MSG_ECHO1))
+				{
+					puts("sendto() error");
+					exit(1);
+				}
 			}
 			
 			// Check if message queue is not empty
 			if (num_msq > 0)
 			{
-				//for (m = 0; m < num_msq; m++)
-				//{
-					puts("Sending UDP broadcast to clients #2 ...");
-					if (sendto(udp_sock, MSG_ECHO2, sizeof(MSG_ECHO2), 0, (struct sockaddr *) &udp_addr,
-					 sizeof(udp_addr)) != sizeof(MSG_ECHO2))
+				puts("Sending UDP broadcast to clients #2 ...");
+				if (sendto(udp_sock, MSG_ECHO2, sizeof(MSG_ECHO2), 0, (struct sockaddr *) &udp_addr,
+				 sizeof(udp_addr)) != sizeof(MSG_ECHO2))
+				{
+					puts("sendto() error");
+					exit(1);
+				}
+				
+				// Send messages to clients of type 2 (if present)
+				for (cl = 0; cl < max_clients; cl++)
+				{
+					if (clients[cl].sock != -1 && clients[cl].type == CL_WORKER)
 					{
-						puts("sendto() error");
-						exit(1);
-					}
-					
-					// Send messages to clients of type 2 (if present)
-					for (cl = 0; cl < max_clients; cl++)
-					{
-						if (clients[cl].sock != -1 && clients[cl].type == CL_WORKER)
+						// Send last message and remove it from queue
+						num_msq--;
+						msg_len = strlen(msq[num_msq])+1;
+						result = send(clients[cl].sock, msq[num_msq], msg_len, MSG_NOSIGNAL);	// MSG_NOSIGNAL - prevent unhandled SIGPIPE terminating process
+						if (result == FAIL)
 						{
-							// Wait until writable
-							//FD_ZERO(&fdset);
-							//FD_SET(clients[cl].sock, &fdset);
-							//tout.tv_sec = 1;
-							//tout.tv_usec = 0;
-							//result = select(clients[cl].sock+1, NULL, &fdset, NULL, &tout);
-							//COND_EXIT(result == FAIL, "select() error");
-							//if ( !FD_ISSET( clients[cl].sock, &fdset) )
-							//	continue;	// Can't write - skip
-							
-							// Send last message and remove it from queue
-							num_msq--;
-							msg_len = strlen(msq[num_msq])+1;
-							result = send(clients[cl].sock, msq[num_msq], msg_len, MSG_NOSIGNAL);	// MSG_NOSIGNAL - prevent unhandled SIGPIPE terminating process
-							if (result == FAIL)
-							{
-								// Client disconnected, skip
-								puts("Client dropped connection ...");
-								//FD_CLR(clients[cl].sock, &fdset);
-								close(clients[cl].sock);
-								clients[cl].sock = -1;
-								clients[cl].type = CL_UNKNOWN;
-								num_clients--;
-								num_msq++;
-								printf("Active clients: %d \n", num_clients);
-								continue;
-							}
-							clients[cl].type = CL_WORKER_BUSY; // Mark as busy to prevent multiple messages being sent
-							printf(">>> Sent message to client: %s \n", msq[num_msq]);
-							printf("Messages in queue: %d \n", num_msq);
-							FreeString(msq[num_msq]);
-							
-							// Check if queue is empty
-							if (num_msq == 0)
-								break;
+							// Client disconnected, skip
+							puts("Client dropped connection ...");
+							close(clients[cl].sock);
+							clients[cl].sock = -1;
+							clients[cl].type = CL_UNKNOWN;
+							num_clients--;
+							num_msq++;
+							printf("Active clients: %d \n", num_clients);
+							continue;
 						}
+						clients[cl].type = CL_WORKER_BUSY; // Mark as busy to prevent multiple messages being sent
+						printf(">>> Sent message to client: %s \n", msq[num_msq]);
+						printf("Messages in queue: %d \n", num_msq);
+						FreeString(msq[num_msq]);
+						
+						// Check if queue is empty
+						if (num_msq == 0)
+							break;
 					}
-					
-					#ifdef DEBUG
-					puts("Messages sent to workers ...");
-					#endif
-					/*// Send all messages for each client of type 2
-					puts("Sending TCP messages ...");
-					for (m = 0; m < num_msq; m++)
-					{
-						for (cl = 0; cl < max_clients; cl++)
-							if (clients[cl].sock != -1 && clients[cl].type == CL_WORKER)
-								send(clients[cl].sock, msq[m], strlen(msq[m])+1, 0);
-					}*/
-				//}
-				/*// Clear queue
-				for (m = 0; m < num_msq; m++)
-					FreeString(msq[m]);
-				num_msq = 0;*/
+				}
+				
+				#ifdef DEBUG
+				puts("Messages sent to workers ...");
+				#endif
 			}
 		}
 		else
@@ -264,7 +223,6 @@ int main (int argc, char * argv[])
 							clients[cl].type = CL_UNKNOWN;
 							clients[cl].sock = temp_sock;
 							fcntl(clients[cl].sock, F_SETFL, O_NONBLOCK);
-							//FD_SET(clients[cl].sock, &fdset);
 							num_clients++;
 						}
 						else
@@ -351,7 +309,6 @@ int main (int argc, char * argv[])
 					else
 					{
 						// Disconnected - close socket and mark as non-connected
-						//FD_CLR(clients[cl].sock, &fdset);
 						close(clients[cl].sock);
 						clients[cl].sock = -1;
 						clients[cl].type = CL_UNKNOWN;

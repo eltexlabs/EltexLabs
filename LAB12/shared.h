@@ -11,7 +11,6 @@
 #include <stdbool.h>	// bool
 
 
-
 // Definitions and typedefs //
 #define FAIL -1
 #define COND_EXIT(COND, EXMSG) { if (COND) { printf("=== Error in %s() ===\n%s\n", __func__, EXMSG); exit(EXIT_FAILURE); } }
@@ -36,6 +35,16 @@
 #define MSG_AUTH2		"tcp2"
 #define MSG_AUTH_ACK	"okay"
 #define MSG_AUTH_DENY	"nope"
+
+
+// Func prototypes
+extern void PrepInetClientSock(const char * address, int port, int * sock, void * sockaddr, bool udp);
+extern void PrepInetServerSock(const char * address, int port, int * sock, void * sockaddr, bool udp, int qsize);
+extern char * AllocString(const char * str);
+extern void FreeString(char * str);
+
+extern int UserQuit();
+
 
 // Message types
 /*
@@ -83,11 +92,3 @@ typedef struct msg_echo_t
 	msggroup_t group;	// Data: group
 } msg_echo_t;
 */
-
-// Func prototypes
-extern void PrepInetClientSock(const char * address, int port, int * sock, void * sockaddr, bool udp);
-extern void PrepInetServerSock(const char * address, int port, int * sock, void * sockaddr, bool udp, int qsize);
-extern char * AllocString(const char * str);
-extern void FreeString(char * str);
-
-extern int UserQuit();
