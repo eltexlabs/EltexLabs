@@ -24,7 +24,7 @@
 #define BUF_SZ		120
 #define SV_MSG_QSZ	10	// Server messages queue size
 #define SV_SOCK_QSZ	5	// Server socket queue size
-#define MAX_SLEEP	3	// Max sleep time
+#define MAX_SLEEP	5	// Max sleep time
 
 #define NUM_STRINGS		10
 #define STRINGS			"quick", "brown", "fox", "jumps", "over", "the", "lazy", "dog", "doge", "bla-bla-bla"
@@ -36,17 +36,22 @@
 #define MSG_AUTH_ACK	"okay"
 #define MSG_AUTH_DENY	"nope"
 
+typedef struct data_t
+{
+	int sz;
+	unsigned char data[];
+} data_t;
 
 // Func prototypes
 extern void PrepInetClientSock(const char * address, int port, int * sock, void * sockaddr, bool udp);
 extern void PrepInetServerSock(const char * address, int port, int * sock, void * sockaddr, bool udp, int qsize);
-extern char * AllocString(const char * str);
-extern void FreeString(char * str);
-
+extern data_t * AllocData(const void * data, int len);
+extern void FreeData(data_t * data);
 extern int UserQuit();
 
 
-// Message types
+// Messages
+
 /*
 #pragma pack(1)
 typedef enum msgtype_t

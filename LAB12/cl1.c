@@ -23,8 +23,8 @@
 #include <errno.h>
 #include <fcntl.h>
 
-#include "shared.h"	// Header shared with server
-
+#include "shared.h"		// Header shared with server
+#include "msg.pb-c.h"	// Protobuf
 
 
 // Definitions and typedefs //
@@ -43,7 +43,7 @@ int main (int argc, char * argv[])
 	struct sockaddr_in cl_addr, sv_addr, udp_addr;
 	int result;
 	int try;
-	int sltime;
+	int32_t sltime;
 	char * address;
 	char buf[BUF_SZ];
 	char * strings[NUM_STRINGS] = {STRINGS};
@@ -52,6 +52,9 @@ int main (int argc, char * argv[])
 	int auth_counter;
 	fd_set fdset;
 	struct timeval tout;
+	Protomsg msg = PROTOMSG__INIT;	// Protobuf: init
+	void * protobuf;
+	int32_t protolen;
 	
 	puts("Client: starting up ...\n");
 	
@@ -183,15 +186,30 @@ int main (int argc, char * argv[])
 				if (!strcmp(buf, MSG_ECHO1))
 				{
 					puts("Got UDP echo from server ...");
+					
+					// Randomize string and sleep time
 					sltime = (rand() % MAX_SLEEP)+1;
+					result = rand() % (NUM_STRINGS);
+					
+					// Protobuf: prep message
+					msg.t = sltime;
+					msg.str = strings[result];
+					protolen = protomsg__get_packed_size(&msg);
+					protobuf = malloc(protolen);
+					protomsg__pack(&msg, protobuf);
+					
+					// Send message
+					printf(">>> Sending response: %s (packed size: %d) \n",
+						strings[result], protolen);
+					send(cl_sock, protobuf, protolen, 0);
+					
+					// Protobuf: free mem
+					free(protobuf);
+					
+					// Sleep
 					printf("Going to sleep for %d second(s)\n", sltime);
 					sleep(sltime);
 					puts("Woke up ...");
-					
-					result = rand() % (NUM_STRINGS);
-					printf(">>> Sending response: %s \n", strings[result]);
-					strcpy(buf, strings[result]);
-					send(cl_sock, buf, strlen(buf)+1, 0);
 				}
 			}
 			else

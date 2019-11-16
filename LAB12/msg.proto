@@ -1,0 +1,6 @@
+syntax = "proto2";
+
+message protomsg {
+	required int32 T=1;
+	required string str=2;
+}

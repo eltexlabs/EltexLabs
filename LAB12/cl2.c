@@ -23,8 +23,8 @@
 #include <errno.h>
 #include <fcntl.h>
 
-#include "shared.h"	// Header shared with server
-
+#include "shared.h"		// Header shared with server
+#include "msg.pb-c.h"	// Protobuf
 
 
 // Definitions and typedefs //
@@ -43,7 +43,7 @@ int main (int argc, char * argv[])
 	struct sockaddr_in cl_addr, sv_addr, udp_addr;
 	int result;
 	int try;
-	int c;	// Counters
+	//int c;	// Counters
 	int sltime;
 	char * address;
 	char buf[BUF_SZ];
@@ -53,6 +53,7 @@ int main (int argc, char * argv[])
 	bool wait;
 	fd_set fdset;
 	struct timeval tout;
+	Protomsg * msg;
 	
 	puts("Client: starting up ...\n");
 	
@@ -224,14 +225,32 @@ int main (int argc, char * argv[])
 				}
 				else if (result != FAIL)
 				{
-					printf(">>> TCP message from server: ");
+					// Protobuf: parse message
+					/*printf(">>> TCP message from server: ");
 					for (c = 0; c < result; c++)
 						if (buf[c] != '\0')
 							putchar(buf[c]);
 						else
 							putchar('\n');
-					putchar('\n');
-					sltime = (rand() % MAX_SLEEP)+1;
+					putchar('\n');*/
+					//sltime = (rand() % MAX_SLEEP)+1;
+					msg = protomsg__unpack(NULL, result, (uint8_t*)buf);	// haaax
+					if (msg)
+					{
+						// Check out contents
+						printf(">>> Got TCP message: %s\n", msg->str);
+						sltime = msg->t;
+						
+						// Protobuf: free message
+						protomsg__free_unpacked(msg, NULL);
+					}
+					else
+					{
+						puts("Protobuf: bad message");
+						sltime = 3;
+					}
+					
+					// Hibernate
 					puts("Disconnecting ...");
 					close(cl_sock);
 					wait = true;

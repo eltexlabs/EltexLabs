@@ -159,27 +159,26 @@ int UserQuit()
 	return 0;
 }
 
-char * AllocString(const char * str)
+data_t * AllocData(const void * data, int len)
 {
-	char * newstr;
-	int len;
+	data_t * newdata;
 	
-	len = strlen(str) + 1;
-	newstr = malloc(len);
-	strcpy(newstr, str);
+	newdata = malloc(sizeof(data_t)+len);
+	newdata->sz = len;
+	memcpy( (char *)newdata+sizeof(data_t), data, len );
 	
 	#ifdef DEBUG
-	printf("Allocated string: %s at %p\n", str, newstr);
+	printf("Allocated data: %d bytes at %p\n", newdata->sz, newdata);
 	#endif
 	
-	return newstr;
+	return newdata;
 }
 
-void FreeString(char * str)
+void FreeData(data_t * data)
 {
 	#ifdef DEBUG
-	printf("Freeing string: %s at %p\n", str, str);
+	printf("Freeing data: %d bytes at %p\n", data->sz, data);
 	#endif
 	
-	free(str);
+	free(data);
 }

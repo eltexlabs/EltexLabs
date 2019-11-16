@@ -60,7 +60,7 @@ int main (int argc, char * argv[])
 	int cl; // Counters
 	int result;
 	char buf[BUF_SZ];
-	char * msq[SV_MSG_QSZ];
+	data_t * msq[SV_MSG_QSZ];
 	int num_msq;
 	fd_set fdset;
 	struct timeval tout;
@@ -164,8 +164,8 @@ int main (int argc, char * argv[])
 					{
 						// Send last message and remove it from queue
 						num_msq--;
-						msg_len = strlen(msq[num_msq])+1;
-						result = send(clients[cl].sock, msq[num_msq], msg_len, MSG_NOSIGNAL);	// MSG_NOSIGNAL - prevent unhandled SIGPIPE terminating process
+						msg_len = msq[num_msq]->sz;
+						result = send(clients[cl].sock, msq[num_msq]->data, msg_len, MSG_NOSIGNAL);	// MSG_NOSIGNAL - prevent unhandled SIGPIPE terminating process
 						if (result == FAIL)
 						{
 							// Client disconnected, skip
@@ -179,9 +179,10 @@ int main (int argc, char * argv[])
 							continue;
 						}
 						clients[cl].type = CL_WORKER_BUSY; // Mark as busy to prevent multiple messages being sent
-						printf(">>> Sent message to client: %s \n", msq[num_msq]);
+						//printf(">>> Sent message to client: %s \n", msq[num_msq]->data);
+						puts(">>> Sent message to client");
 						printf("Messages in queue: %d \n", num_msq);
-						FreeString(msq[num_msq]);
+						FreeData(msq[num_msq]);
 						
 						// Check if queue is empty
 						if (num_msq == 0)
@@ -271,8 +272,9 @@ int main (int argc, char * argv[])
 							if (num_msq < SV_MSG_QSZ)
 							{
 								// Add message to queue
-								printf(">>> Got message from client: %s \n", buf);
-								msq[num_msq] = AllocString(buf);
+								//printf(">>> Got message from client: %s \n", buf);
+								puts(">>> Got message from client");
+								msq[num_msq] = AllocData(buf, result);	// haaaax
 								num_msq++;
 								printf("Messages in queue: %d \n", num_msq);
 								if (num_msq >= SV_MSG_QSZ)
